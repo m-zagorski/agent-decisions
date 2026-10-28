@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""ctx lookup: give Claude only the decisions that matter for what it is touching.
+"""agent-decisions lookup: give Claude only the decisions that matter for what it is touching.
 
 Commands:
-    ctx_lookup.py context        Hook mode (PostToolUse on Read/Edit/Write). Reads the hook
+    decisions.py context        Hook mode (PostToolUse on Read/Edit/Write). Reads the hook
                                  JSON on stdin and injects the decisions anchored to that file.
-    ctx_lookup.py show <path>    Print every decision anchored to a file (for Claude or you).
-    ctx_lookup.py search <words> Rank decisions by keyword match, top 8 (for "why do we ...?").
+    decisions.py show <path>    Print every decision anchored to a file (for Claude or you).
+    decisions.py search <words> Rank decisions by keyword match, top 8 (for "why do we ...?").
 
 Scale: records are never loaded wholesale. An index (file path -> records) is cached in
 .context/.state/index.json and rebuilt only when a record changes, so a lookup reads one
@@ -140,9 +140,9 @@ def cmd_context():
     except OSError:
         pass
 
-    lines = [f"[ctx] Recorded decisions that govern {rel}:"] + [line(e) for e in batch]
+    lines = [f"[decisions] Recorded decisions that govern {rel}:"] + [line(e) for e in batch]
     if len(new) > len(batch):
-        lines.append(f"- …and {len(new) - len(batch)} more: run python3 .claude/hooks/ctx_lookup.py show {rel}")
+        lines.append(f"- …and {len(new) - len(batch)} more: run python3 .claude/hooks/decisions.py show {rel}")
     lines.append("Read the full record before changing code it covers. If the change you are about to make "
                  "contradicts one, stop and tell the user instead of proceeding. For 'needs-reason' records, "
                  "ask the user why before changing that behaviour.")

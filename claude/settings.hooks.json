@@ -1,8 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 .claude/hooks/ctx_lookup.py show:*)",
-      "Bash(python3 .claude/hooks/ctx_lookup.py search:*)"
+      "Bash(python3 .claude/hooks/decisions.py show:*)",
+      "Bash(python3 .claude/hooks/decisions.py search:*)"
     ]
   },
   "hooks": {
@@ -18,7 +18,7 @@
     "PostToolUse": [
       {
         "matcher": "Read|Edit|MultiEdit|Write",
-        "hooks": [{ "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ctx_lookup.py context" }]
+        "hooks": [{ "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/decisions.py context" }]
       }
     ]
   }

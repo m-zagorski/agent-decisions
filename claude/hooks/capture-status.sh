@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ctx: at session start, tell Claude which decision records are waiting for the user.
+# agent-decisions: at session start, tell Claude which decision records are waiting for the user.
 # Registered for SessionStart; its output is added to Claude's context.
-[ "${CTX_CAPTURE_RUNNING:-}" = "1" ] && exit 0
+[ "${DECISIONS_CAPTURE_RUNNING:-}" = "1" ] && exit 0
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 DIR="$PROJECT_DIR/.context/decisions"
@@ -18,7 +18,7 @@ failed=""
 
 [ -z "$drafts$needs$failed" ] && exit 0
 
-echo "[ctx] Decision records are waiting for the user:"
+echo "[decisions] Decision records are waiting for the user:"
 [ -n "$drafts" ] && echo "- Drafts to review and mark status: active: $drafts"
 [ -n "$needs" ] && echo "- Missing a reason (ask the user why, then fill in Why and set status: draft): $needs"
 [ -n "$failed" ] && echo "- The last background capture failed; details in .context/.state/capture.log"

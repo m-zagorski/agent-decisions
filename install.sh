@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Install ctx into a project that uses Claude Code.
+# Install agent-decisions into a project that uses Claude Code.
 #
 # Usage:  ./install.sh /path/to/your/project [--shared] [--with-ci]
 #   --shared   write hooks and permissions to .claude/settings.json (committed, for the team)
 #              instead of .claude/settings.local.json (personal, the default)
 #   --with-ci  also add .github/workflows/decisions-check.yml
 #
-# Safe to run again: it updates ctx's own files, merges settings without duplicating
-# entries, and replaces the AGENTS.md block between its ctx markers.
+# Safe to run again: it updates agent-decisions' own files, merges settings without duplicating
+# entries, and replaces the AGENTS.md block between its markers. Installs from before the
+# rename (ctx_lookup.py, ctx markers) are migrated in place.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +27,7 @@ for arg in "$@"; do
 done
 command -v python3 >/dev/null || { echo "python3 is required" >&2; exit 1; }
 
-echo "Installing ctx into $TARGET"
+echo "Installing agent-decisions into $TARGET"
 
 # 1. Skills and hooks
 mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/hooks" "$TARGET/.context/decisions"
@@ -35,16 +36,39 @@ for skill in capture-decisions review-decisions; do
   cp "$SRC/claude/skills/$skill/SKILL.md" "$TARGET/.claude/skills/$skill/SKILL.md"
 done
 cp "$SRC"/claude/hooks/* "$TARGET/.claude/hooks/"
+rm -f "$TARGET/.claude/hooks/ctx_lookup.py"  # renamed to decisions.py
 chmod +x "$TARGET"/.claude/hooks/*.sh "$TARGET"/.claude/hooks/*.py
 echo "  skills and hooks -> .claude/"
 
-# 2. Merge hooks and permissions into the settings file
-python3 - "$SRC/claude/settings.hooks.json" "$TARGET/.claude/$SETTINGS_FILE" <<'PY'
+# 2. Merge hooks and permissions into the settings file. Entries for the old ctx_lookup.py
+#    are removed from both settings files, so a re-install never registers the lookup twice.
+python3 - "$SRC/claude/settings.hooks.json" "$TARGET/.claude/$SETTINGS_FILE" "$TARGET/.claude" <<'PY'
 import json, sys
 from pathlib import Path
-src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+src, dst, claude_dir = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+LEGACY = "ctx_lookup.py"
+
+def load(path):
+    return json.loads(path.read_text()) if path.exists() and path.read_text().strip() else {}
+
+def drop_legacy(settings):
+    perms = settings.get("permissions", {})
+    if "allow" in perms:
+        perms["allow"] = [r for r in perms["allow"] if LEGACY not in r]
+    for event, groups in list(settings.get("hooks", {}).items()):
+        for g in groups:
+            g["hooks"] = [h for h in g.get("hooks", []) if LEGACY not in h.get("command", "")]
+        settings["hooks"][event] = [g for g in groups if g["hooks"]]
+    return settings
+
+for other in (claude_dir / "settings.json", claude_dir / "settings.local.json"):
+    if other != dst and other.exists():
+        text = other.read_text()
+        if LEGACY in text:
+            other.write_text(json.dumps(drop_legacy(json.loads(text)), indent=2) + "\n")
+
 new = json.loads(src.read_text())
-cur = json.loads(dst.read_text()) if dst.exists() and dst.read_text().strip() else {}
+cur = drop_legacy(load(dst))
 
 allow = cur.setdefault("permissions", {}).setdefault("allow", [])
 for rule in new["permissions"]["allow"]:
@@ -63,20 +87,20 @@ dst.write_text(json.dumps(cur, indent=2) + "\n")
 PY
 echo "  hooks and permissions merged -> .claude/$SETTINGS_FILE"
 
-# 3. Agent instructions: replace the ctx block in AGENTS.md, or append it
+# 3. Agent instructions: replace our block in AGENTS.md (or the old ctx one), or append it
 python3 - "$SRC/templates/AGENTS.decisions.md" "$TARGET/AGENTS.md" <<'PY'
 import re, sys
 from pathlib import Path
 block = Path(sys.argv[1]).read_text().strip() + "\n"
 dst = Path(sys.argv[2])
 text = dst.read_text() if dst.exists() else ""
-pattern = re.compile(r"<!-- ctx:start -->.*?<!-- ctx:end -->\n?", re.S)
+pattern = re.compile(r"<!-- (?:agent-decisions|ctx):start -->.*?<!-- (?:agent-decisions|ctx):end -->\n?", re.S)
 text = pattern.sub(lambda _: block, text) if pattern.search(text) else (text.rstrip() + "\n\n" + block if text.strip() else block)
 dst.write_text(text)
 PY
 echo "  agent instructions -> AGENTS.md (make sure CLAUDE.md imports it with @AGENTS.md)"
 
-# 4. Keep ctx's working files out of git
+# 4. Keep agent-decisions' working files out of git
 GI="$TARGET/.gitignore"
 grep -qxF ".context/.state/" "$GI" 2>/dev/null || { echo ".context/.state/" >> "$GI"; echo "  .context/.state/ -> .gitignore"; }
 

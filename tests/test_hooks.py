@@ -1,4 +1,4 @@
-"""Tests for the ctx hook scripts. Standard library only: python3 -m unittest discover tests"""
+"""Tests for the agent-decisions hook scripts. Standard library only: python3 -m unittest discover tests"""
 import json
 import os
 import subprocess
@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FILTER = ROOT / "claude" / "hooks" / "filter_transcript.py"
-LOOKUP = ROOT / "claude" / "hooks" / "ctx_lookup.py"
+LOOKUP = ROOT / "claude" / "hooks" / "decisions.py"
 
 
 def entry(kind, content, **extra):
@@ -150,6 +150,60 @@ class LookupTest(unittest.TestCase):
         found = self.run_lookup("search", "sign-outs", "timeout")
         self.assertIn("0015", found)
         self.assertNotIn("0003", found)
+
+
+OLD_LOOKUP = 'python3 "$CLAUDE_PROJECT_DIR"/.claude/hooks/ctx_lookup.py context'
+
+
+class InstallTest(unittest.TestCase):
+    def setUp(self):
+        self.project = Path(tempfile.mkdtemp())
+        self.claude = self.project / ".claude"
+
+    def install(self, *opts):
+        subprocess.run(["bash", str(ROOT / "install.sh"), str(self.project), *opts], check=True, capture_output=True)
+
+    def settings(self, name="settings.local.json"):
+        return json.loads((self.claude / name).read_text())
+
+    def commands(self, settings):
+        return [h["command"] for groups in settings["hooks"].values() for g in groups for h in g["hooks"]]
+
+    def test_reinstall_does_not_duplicate(self):
+        (self.project / "AGENTS.md").write_text("# Project rules\n")
+        self.install("--with-ci")
+        self.install()
+        s = self.settings()
+        self.assertEqual(len(self.commands(s)), 4)
+        self.assertEqual(len(s["permissions"]["allow"]), 2)
+        agents = (self.project / "AGENTS.md").read_text()
+        self.assertTrue(agents.startswith("# Project rules"))
+        self.assertEqual(agents.count("agent-decisions:start"), 1)
+        self.assertTrue((self.project / ".github/workflows/decisions-check.yml").exists())
+        self.assertEqual((self.project / ".gitignore").read_text().count(".context/.state/"), 1)
+
+    def test_migrates_a_ctx_install(self):
+        (self.claude / "hooks").mkdir(parents=True)
+        (self.claude / "hooks" / "ctx_lookup.py").write_text("# old\n")
+        old = {"permissions": {"allow": ["Bash(npm test)", "Bash(python3 .claude/hooks/ctx_lookup.py show:*)"]},
+               "hooks": {"PostToolUse": [{"matcher": "Read|Edit|MultiEdit|Write",
+                                          "hooks": [{"type": "command", "command": OLD_LOOKUP}]}],
+                         "Stop": [{"hooks": [{"type": "command", "command": "./my-hook.sh"}]}]}}
+        (self.claude / "settings.json").write_text(json.dumps(old))  # an old --shared install
+        (self.project / "AGENTS.md").write_text("# Rules\n\n<!-- ctx:start -->\nold block\n<!-- ctx:end -->\n\nMore rules\n")
+        self.install()
+
+        self.assertFalse((self.claude / "hooks" / "ctx_lookup.py").exists())
+        self.assertTrue((self.claude / "hooks" / "decisions.py").exists())
+        shared = self.settings("settings.json")
+        self.assertEqual(shared["permissions"]["allow"], ["Bash(npm test)"])
+        self.assertEqual(self.commands(shared), ["./my-hook.sh"], "user hooks are kept")
+        self.assertEqual(len([c for c in self.commands(self.settings()) if "decisions.py" in c]), 1)
+        agents = (self.project / "AGENTS.md").read_text()
+        self.assertNotIn("old block", agents)
+        self.assertNotIn("ctx:start", agents)
+        self.assertEqual(agents.count("agent-decisions:start"), 1)
+        self.assertTrue(agents.rstrip().endswith("More rules"))
 
 
 if __name__ == "__main__":

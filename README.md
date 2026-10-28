@@ -68,7 +68,7 @@ Then:
 
 **Automatically.** Just work. When you `/clear`, exit, or the session gets compacted, a background run reads the new part of the session and writes drafts to `.context/decisions/`. Sessions with no code edits are skipped. The next session starts with a note like:
 
-> [ctx] Decision records are waiting for the user: Drafts to review: 0014, 0015 …
+> [decisions] Decision records are waiting for the user: Drafts to review: 0014, 0015 …
 
 **Manually.** Run `/capture-decisions` at the end of a task. It uses the live conversation and asks you directly when the reason behind a decision is unknown.
 
@@ -89,8 +89,8 @@ Claude checks every anchor, proposes merges, deletions and conflicts, then asks 
 This happens on its own. When Claude reads or edits a file, the decisions anchored to it are added to its context as one-line summaries, at most 5 per file and each record at most once per session. For "why does this work like this?" questions, Claude searches:
 
 ```bash
-python3 .claude/hooks/ctx_lookup.py search sign-out timeout
-python3 .claude/hooks/ctx_lookup.py show app/src/main/java/.../AmplifyTokenManager.kt
+python3 .claude/hooks/decisions.py search sign-out timeout
+python3 .claude/hooks/decisions.py show app/src/main/java/.../AmplifyTokenManager.kt
 ```
 
 You can run those yourself too.
@@ -120,7 +120,7 @@ your-project/
 │       ├── capture.sh                # SessionEnd + PreCompact: start a background capture
 │       ├── filter_transcript.py      # condense the new part of a session transcript
 │       ├── capture-status.sh         # SessionStart: report drafts waiting for review
-│       └── ctx_lookup.py             # PostToolUse: inject decisions; show / search
+│       └── decisions.py             # PostToolUse: inject decisions; show / search
 ├── .context/
 │   ├── decisions/                    # the records, committed with the code
 │   └── .state/                       # logs, snapshots, index (gitignored)
@@ -132,9 +132,9 @@ your-project/
 1. **The hook, without Claude:**
    ```bash
    echo '{"session_id":"test","tool_input":{"file_path":"path/to/AnchoredFile.kt"}}' \
-     | python3 .claude/hooks/ctx_lookup.py context && rm -f .context/.state/shown-test.txt
+     | python3 .claude/hooks/decisions.py context && rm -f .context/.state/shown-test.txt
    ```
-   You should see JSON with `[ctx] Recorded decisions that govern …`.
+   You should see JSON with `[decisions] Recorded decisions that govern …`.
 2. **In a session:** ask Claude to read an anchored file. A new `.context/.state/shown-<session>.txt` should appear.
 3. **Respect:** ask Claude to make a change that contradicts a decision. It should stop and ask.
 4. **No noise:** ask Claude to read a file with no decisions. It shouldn't mention any.
@@ -144,7 +144,7 @@ your-project/
 - **Nothing happened after `/clear`.** Capture runs in the background and takes a minute or two. Check `tail -20 .context/.state/capture.log`; it should end with `--- ok`.
 - **The log says `FAILED` or shows permission errors.** The background run may only read files, write inside `.context/`, and run `git branch/log/diff`. The log names what was denied.
 - **Hooks don't run at all.** Hooks load when a session starts: restart Claude Code, then check `/hooks`.
-- **A decision isn't injected.** Its anchor path must be relative to the repo root and match the file exactly (or a glob like `feature/auth/**`). Check with `ctx_lookup.py show <path>`.
+- **A decision isn't injected.** Its anchor path must be relative to the repo root and match the file exactly (or a glob like `feature/auth/**`). Check with `decisions.py show <path>`.
 
 ## Development
 

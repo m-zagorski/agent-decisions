@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# ctx: capture decisions when a session ends (/clear, exit) or is about to be compacted.
+# agent-decisions: capture decisions when a session ends (/clear, exit) or is about to be compacted.
 # Registered for SessionEnd and PreCompact. It must return quickly, so the slow part
 # (a headless Claude Code run of the capture-decisions skill) runs in the background.
 set -uo pipefail
 
 # The background capture is itself a Claude Code session: never let it capture itself.
-[ "${CTX_CAPTURE_RUNNING:-}" = "1" ] && exit 0
+[ "${DECISIONS_CAPTURE_RUNNING:-}" = "1" ] && exit 0
 
 INPUT="$(cat)"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 HOOKS_DIR="$PROJECT_DIR/.claude/hooks"
 STATE="$PROJECT_DIR/.context/.state"
 LOG="$STATE/capture.log"
-MODEL="${CTX_CAPTURE_MODEL:-sonnet}"
+MODEL="${DECISIONS_CAPTURE_MODEL:-sonnet}"
 mkdir -p "$STATE"
 
 field() {
@@ -31,7 +31,7 @@ python3 "$HOOKS_DIR/filter_transcript.py" "$TRANSCRIPT" "$SESSION" "$STATE" "$FI
 PROMPT="Use the capture-decisions skill in transcript mode. The transcript to capture is $FILTERED (session $SESSION, trigger: $EVENT). You cannot ask the user anything; follow the skill's transcript-mode rules."
 
 (
-  export CTX_CAPTURE_RUNNING=1
+  export DECISIONS_CAPTURE_RUNNING=1
   cd "$PROJECT_DIR" || exit 1
 
   # One capture at a time. mkdir is atomic, so it works as a lock (macOS has no flock).

@@ -10,7 +10,7 @@ Turn the real decisions made in a session into short draft records that live nex
 ## 0. Pick the mode
 
 - **Live mode** (default): the user ran `/capture-decisions` in this session. The source is this conversation. You can ask the user questions.
-- **Transcript mode**: the prompt says "transcript mode" and gives the path of a filtered transcript file (written by the ctx hooks). Read that whole file; it is the source. Its header names the session ID and says which part of the session it covers; earlier parts were already captured, so the existing records already reflect them. **Nobody is there to answer questions**: never wait for input, and turn every open question into a `needs-reason` record (step 4).
+- **Transcript mode**: the prompt says "transcript mode" and gives the path of a filtered transcript file (written by the agent-decisions hooks). Read that whole file; it is the source. Its header names the session ID and says which part of the session it covers; earlier parts were already captured, so the existing records already reflect them. **Nobody is there to answer questions**: never wait for input, and turn every open question into a `needs-reason` record (step 4).
 
 In the filtered transcript, `[you]` lines are the user, `[claude]` lines are the assistant's prose, `[edit]`/`[write]` are file changes (clipped), `[bash]` are commands run, and `[error]` are failed tool results, which often show an approach that was tried and abandoned.
 
