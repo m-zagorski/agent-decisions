@@ -1,0 +1,27 @@
+# Blocks merging unreviewed decision records into the main branch.
+# Drafts are fine on feature branches (they are the handoff notes for work in progress);
+# they just have to be reviewed (/review-decisions) before the PR merges.
+name: Decision records
+on:
+  pull_request:
+    branches: [main, develop]   # adjust to your protected branches
+    paths: [".context/decisions/**"]
+
+jobs:
+  reviewed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No unreviewed drafts
+        run: |
+          drafts=$(grep -l '^status: draft$' .context/decisions/*.md 2>/dev/null || true)
+          needs=$(grep -l '^status: needs-reason$' .context/decisions/*.md 2>/dev/null || true)
+          if [ -n "$needs" ]; then
+            echo "::notice::Records without a known reason (allowed, they warn before changes):"
+            echo "$needs"
+          fi
+          if [ -n "$drafts" ]; then
+            for f in $drafts; do echo "::error file=$f::Unreviewed decision draft. Run /review-decisions, then commit."; done
+            exit 1
+          fi
+          echo "All decision records are reviewed."

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 .claude/hooks/ctx_lookup.py show:*)",
+      "Bash(python3 .claude/hooks/ctx_lookup.py search:*)"
+    ]
+  },
+  "hooks": {
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture.sh" }] }
+    ],
+    "PreCompact": [
+      { "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture.sh" }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/capture-status.sh" }] }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Edit|MultiEdit|Write",
+        "hooks": [{ "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ctx_lookup.py context" }]
+      }
+    ]
+  }
+}
