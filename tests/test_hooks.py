@@ -145,6 +145,14 @@ class LookupTest(unittest.TestCase):
         record(self.decisions, "0020", "active", "app/b/New.kt", "New rule", "Something.")
         self.assertIn("0020", self.hook("app/b/New.kt", "S3"))
 
+    def test_folder_anchor_covers_everything_under_it(self):
+        record(self.decisions, "0021", "active", "feature/checkout", "Checkout rule", "Something.")
+        record(self.decisions, "0022", "active", "feature/checkout-v2/", "Checkout v2 rule", "Something.")
+        found = self.hook("feature/checkout/src/main/Cart.kt")
+        self.assertIn("0021", found)
+        self.assertNotIn("0022", found, "a folder anchor is not a string prefix")
+        self.assertIn("0022", self.hook("feature/checkout-v2/Cart.kt"), "a trailing slash is fine")
+
     def test_show_and_search(self):
         self.assertIn("0016", self.run_lookup("show", "app/a/Other.kt"))
         found = self.run_lookup("search", "sign-outs", "timeout")
@@ -152,7 +160,86 @@ class LookupTest(unittest.TestCase):
         self.assertNotIn("0003", found)
 
 
-OLD_LOOKUP = 'python3 "$CLAUDE_PROJECT_DIR"/.claude/hooks/ctx_lookup.py context'
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+class DoctorTest(unittest.TestCase):
+    def setUp(self):
+        self.project = Path(tempfile.mkdtemp())
+        self.decisions = self.project / ".context" / "decisions"
+        self.decisions.mkdir(parents=True)
+        self.git("init", "-q")
+        self.write("app/Auth.kt", "class Auth {\n    fun signOut(redirect: Uri) {}\n}\n")
+        self.write("app/Timeout.kt", "fun withTimeout(ms: Long) {}\n")
+        self.write("app/Old.kt", "class Old\n")
+        self.write("app/Chain.kt", "class Chain\n")
+        self.write("app/build.gradle.kts", "dependencies {\n    implementation(libs.androidx.paging.runtime)\n}\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "start")
+
+    def git(self, *args):
+        subprocess.run(["git", *args], cwd=self.project, check=True, env={**os.environ, **GIT_ENV})
+
+    def mv(self, src, dst):
+        (self.project / dst).parent.mkdir(parents=True, exist_ok=True)
+        self.git("mv", src, dst)
+
+    def write(self, rel, text):
+        (self.project / rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.project / rel).write_text(text)
+
+    def doctor(self, *args):
+        env = {**os.environ, **GIT_ENV, "CLAUDE_PROJECT_DIR": str(self.project)}
+        r = subprocess.run([sys.executable, str(LOOKUP), "doctor", *args], capture_output=True, text=True, env=env)
+        return r.returncode, r.stdout
+
+    def test_healthy_anchors(self):
+        record(self.decisions, "0001", "active", "app/Auth.kt#Auth.signOut(Uri)", "Sign out", "x")
+        record(self.decisions, "0002", "active", "app/build.gradle.kts#dependencies[androidx.paging:paging-runtime]", "Paging", "x")
+        record(self.decisions, "0003", "active", "app/**", "Glob", "x")
+        record(self.decisions, "0004", "active", "app", "Folder", "x")
+        record(self.decisions, "0005", "superseded", "gone/Nothing.kt", "Old", "x")
+        code, out = self.doctor()
+        self.assertEqual(code, 0, out)
+        self.assertIn("All anchors of 4 records", out)
+
+    def test_reports_and_explains_broken_anchors(self):
+        self.mv("app/Timeout.kt", "core/Timeout.kt")
+        self.git("rm", "-q", "app/Old.kt")
+        self.git("commit", "-qm", "move and delete")
+        self.mv("app/Chain.kt", "lib/Chain.kt")
+        self.git("commit", "-qm", "chain 1")
+        self.mv("lib/Chain.kt", "core/Chain.kt")
+        self.git("commit", "-qm", "chain 2")
+        self.mv("app/Auth.kt", "app/Login.kt")  # staged, not committed
+        record(self.decisions, "0010", "active", "app/Timeout.kt#withTimeout(Long)", "Timeout", "x")
+        record(self.decisions, "0011", "draft", "app/Old.kt", "Old", "x")
+        record(self.decisions, "0012", "active", "app/Chain.kt", "Chain", "x")
+        record(self.decisions, "0013", "active", "app/Auth.kt", "Auth", "x")
+        record(self.decisions, "0014", "active", "core/Timeout.kt#withRetry(Int)", "Retry", "x")
+        record(self.decisions, "0015", "active", "feature/**", "Feature", "x")
+        record(self.decisions, "0016", "active", "core/Timeout.kt", "Fine", "x")
+        (self.decisions / "0017-x.md").write_text('---\nid: "0017"\nstatus: needs-reason\n---\n# No anchors\n')
+
+        code, out = self.doctor()
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"0010 Timeout[^\n]*\n  missing +app/Timeout.kt#withTimeout\(Long\)\n +renamed → core/Timeout.kt \(\w+, ")
+        self.assertRegex(out, r"0011[^\n]*\n  missing[^\n]*\n +deleted in \w+ \(")
+        self.assertRegex(out, r"renamed → lib/Chain.kt \(.*\) → renamed → core/Chain.kt")
+        self.assertIn("renamed → app/Login.kt (not committed yet)", out)
+        self.assertRegex(out, r"0014[^\n]*\n  symbol +core/Timeout.kt#withRetry")
+        self.assertRegex(out, r"0015[^\n]*\n  no match +feature/\*\*")
+        self.assertRegex(out, r"0017[^\n]*\n  no anchors")
+        self.assertNotIn("0016", out)
+        self.assertIn("7 problems in 7 of 8 records", out)
+
+        code, out = self.doctor("--github")
+        self.assertEqual(code, 1)
+        self.assertIn("::warning file=.context/decisions/0010-x.md::0010 missing: app/Timeout.kt#withTimeout(Long) (renamed → core/Timeout.kt", out)
+
+
+OLD_LOOKUP ='python3 "$CLAUDE_PROJECT_DIR"/.claude/hooks/ctx_lookup.py context'
 
 
 class InstallTest(unittest.TestCase):

@@ -56,7 +56,7 @@ This copies the skills and hooks into the project's `.claude/`, merges the hook 
 
 Options:
 - `--shared`: write settings to `.claude/settings.json` instead, so the whole team gets the hooks.
-- `--with-ci`: also add the GitHub check that blocks merging unreviewed drafts.
+- `--with-ci`: also add the GitHub check that blocks merging unreviewed drafts and warns about broken anchors. It calls `.claude/hooks/decisions.py`, so commit `.claude/hooks/`.
 
 Then:
 1. Make sure your `CLAUDE.md` contains `@AGENTS.md` (or paste [the block](templates/AGENTS.decisions.md) into `CLAUDE.md` directly).
@@ -95,6 +95,22 @@ python3 .claude/hooks/decisions.py show app/src/main/java/.../AmplifyTokenManage
 
 You can run those yourself too.
 
+### Keeping anchors healthy
+
+Anchors are paths, so renaming or deleting a file silently disconnects its decisions. `doctor` finds them:
+
+```bash
+python3 .claude/hooks/decisions.py doctor
+```
+
+```
+0008 Time out Amplify calls by awaiting a detached coroutine  [active]  (.context/decisions/0008-…md)
+  missing    app/…/AmplifyTimeout.kt#withAmplifyTimeoutOrNull(Long,suspend () -> T)
+             renamed → core/net/…/AmplifyTimeout.kt (e86516f, 2026-10-28)
+```
+
+It reports anchors whose file is `missing` (and, from git, where it went: renamed, deleted, or not committed yet), globs that match nothing (`no match`), symbols whose name no longer appears in the file (`symbol`; a name check only, parameter types aren't verified), and records with `no anchors`. Superseded records are skipped. It exits with 1 when something is broken. The CI check (`--with-ci`) runs it on every PR as a warning, so the PR that renames a file is the one that hears about it.
+
 ### Record lifecycle
 
 | Status | Meaning | Shown to agents |
@@ -104,7 +120,7 @@ You can run those yourself too.
 | `active` | Reviewed and approved | Yes |
 | `superseded` | Replaced by a newer record (`supersedes: "NNNN"`) | No |
 
-Drafts are fine on feature branches: they're the handoff notes when someone else picks up your work. The optional CI check (`--with-ci`) blocks merging any `draft` into `main`. `needs-reason` records are allowed but listed.
+Drafts are fine on feature branches: they're the handoff notes when someone else picks up your work. The optional CI check (`--with-ci`) blocks merging any `draft` into `main`, and warns about broken anchors. `needs-reason` records are allowed but listed.
 
 ## What ends up in your project
 
@@ -144,7 +160,7 @@ your-project/
 - **Nothing happened after `/clear`.** Capture runs in the background and takes a minute or two. Check `tail -20 .context/.state/capture.log`; it should end with `--- ok`.
 - **The log says `FAILED` or shows permission errors.** The background run may only read files, write inside `.context/`, and run `git branch/log/diff`. The log names what was denied.
 - **Hooks don't run at all.** Hooks load when a session starts: restart Claude Code, then check `/hooks`.
-- **A decision isn't injected.** Its anchor path must be relative to the repo root and match the file exactly (or a glob like `feature/auth/**`). Check with `decisions.py show <path>`.
+- **A decision isn't injected.** Its anchor path must be relative to the repo root and be the file, a folder above it, or a glob like `feature/auth/**` that matches it. Check with `decisions.py show <path>`, and run `decisions.py doctor` to find anchors that no longer point at anything.
 
 ## Development
 

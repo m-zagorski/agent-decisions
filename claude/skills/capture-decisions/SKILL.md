@@ -84,7 +84,8 @@ Anchors say which code a decision governs. Use these ID formats:
 | Gradle setting | `path#dotted.path` | `app/build.gradle.kts#android.defaultConfig.minSdk` |
 | Gradle dependency | `path#dependencies[group:artifact]` | `app/build.gradle.kts#dependencies[androidx.paging:paging-runtime]` |
 | Manifest entry | `path#element[name]` | `app/src/main/AndroidManifest.xml#uses-permission[android.permission.CAMERA]` |
-| Whole file or module | `path` or `path/**` | `feature/checkout/**` |
+| Whole file or folder | `path` (a folder covers everything under it) | `feature/checkout` |
+| Files matching a glob | `path/*.kt`, `path/**` | `feature/checkout/**/*ViewModel.kt` |
 
 Rules for parameter types: use simple type names in declaration order, keep `?` for nullable types, and drop generic arguments (`List<Order>` becomes `List`). A function with no parameters ends in `()`.
 

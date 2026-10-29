@@ -1,17 +1,23 @@
-# Blocks merging unreviewed decision records into the main branch.
-# Drafts are fine on feature branches (they are the handoff notes for work in progress);
-# they just have to be reviewed (/review-decisions) before the PR merges.
+# Checks decision records on every pull request:
+# - Anchors: every record still points at existing code. A PR that renames or deletes an
+#   anchored file gets a warning naming the record and where the file went. Warning only for now.
+# - Drafts: no unreviewed draft may merge. Drafts are fine on feature branches (they are the
+#   handoff notes for work in progress); they just have to be reviewed (/review-decisions) first.
+# Runs on every PR, not only ones that touch .context/: renaming code is what breaks anchors.
 name: Decision records
 on:
   pull_request:
     branches: [main, develop]   # adjust to your protected branches
-    paths: [".context/decisions/**"]
 
 jobs:
   reviewed:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history, so doctor can tell where a missing file went
+      - name: Anchors point at existing code
+        run: python3 .claude/hooks/decisions.py doctor --github || true
       - name: No unreviewed drafts
         run: |
           drafts=$(grep -l '^status: draft$' .context/decisions/*.md 2>/dev/null || true)
